@@ -23,10 +23,21 @@ def get_expenses():
     if not selected_date:
         return {"error":"Please select a date"},400
 
+    
     try:
-        selected_date=date.fromisoformat(selected_date)
+        if len(selected_date) != 10:
+            raise ValueError
+
+        selected_date = date.fromisoformat(selected_date)
+
+        if selected_date.isoformat() != request.args.get("date"):
+            raise ValueError
+
     except ValueError:
-        return {"error":"Invalid date format. Please use YYYY-MM-DD."},400
+        return {
+            "error": "Invalid date format. Please use YYYY-MM-DD."
+        }, 400
+
     expenses=Expense.query.filter_by(date=selected_date).all()
 
     return [
