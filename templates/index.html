@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expense Tracker Dashboard</title>
+    <link rel="stylesheet" href="../static/style.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- LEFT: Today's Log & Add Form -->
+        <div class="left-pane">
+            <div class="card today-card">
+                <h2>Today's Expense</h2>
+                <div class="amount-display" id="todayTotalDisplay">₹{{ "%.2f"|format(todays_total) }}</div>
+            </div>
+
+            <div class="card log-card">
+                <h3>Today's Log</h3>
+                <ul class="expense-list" id="todayLogList">
+                    {% for item in todays_expenses %}
+                    <li class="expense-item">
+                        <div class="expense-info">
+                            <span class="expense-title">{{ item.title }}</span>
+                            <span class="expense-meta">{{ item.category }} • {{ item.date.isoformat() if item.date else today_str }}</span>
+                        </div>
+                        <div class="expense-right">
+                            <span class="expense-amount">₹{{ "%.2f"|format(item.amount) }}</span>
+                            <button class="action-btn" onclick="openEdit({{ item.id }}, '{{ item.title }}', {{ item.amount }}, '{{ item.category }}', '{{ item.date.isoformat() if item.date else today_str }}')">Edit</button>
+                            <button class="action-btn delete-btn" onclick="deleteItem({{ item.id }})">&times;</button>
+                        </div>
+                    </li>
+                    {% else %}
+                    <p class="empty-text">No expenses recorded for today.</p>
+                    {% endfor %}
+                </ul>
+
+                <form action="/" method="POST" class="add-form">
+                    <h4>Add Expense</h4>
+                    <input type="text" name="title" placeholder="Description" required>
+                    <input type="number" step="0.01" name="amount" placeholder="Amount (₹)" required>
+                    <select name="category">
+                        <option value="General">General</option>
+                        <option value="Food">Food & Dining</option>
+                        <option value="Groceries">Groceries</option>
+                        <option value="Transport">Transport</option>
+                        <option value="Utilities">Utilities & Bills</option>
+                        <option value="Entertainment">Entertainment</option>
+                        <option value="Health">Health</option>
+                    </select>
+                    <input type="date" name="date" value="{{ today_str }}">
+                    <button type="submit">Add Expense</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- RIGHT: Monthly Calendar & Date Summary -->
+        <div class="right-pane">
+            <div class="card calendar-card">
+                <h2>Monthly Calendar</h2>
+                <div class="calendar-widget">
+                    <div class="calendar-header">
+                        <div class="calendar-title" id="calMonthYear"></div>
+                        <div class="calendar-nav">
+                            <button class="cal-nav-btn" onclick="changeMonth(-1)">&lt;</button>
+                            <button class="cal-nav-btn" onclick="jumpToday()">Today</button>
+                            <button class="cal-nav-btn" onclick="changeMonth(1)">&gt;</button>
+                        </div>
+                    </div>
+                    <div class="cal-weekdays">
+                        <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+                    </div>
+                    <div class="cal-days-grid" id="calDaysGrid"></div>
+                </div>
+
+                <div class="date-summary">
+                    <h3 id="dateSummaryTitle">Summary for {{ selected_date }}</h3>
+                    <p class="selected-total" id="dateSummaryTotal">Total: ₹{{ "%.2f"|format(selected_total) }}</p>
+                    <ul class="expense-list" id="selectedExpensesList">
+                        {% for item in selected_expenses %}
+                        <li class="expense-item">
+                            <div class="expense-info">
+                                <span class="expense-title">{{ item.title }}</span>
+                                <span class="expense-meta">{{ item.category }}</span>
+                            </div>
+                            <div class="expense-right">
+                                <span class="expense-amount">₹{{ "%.2f"|format(item.amount) }}</span>
+                                <button class="action-btn" onclick="openEdit({{ item.id }}, '{{ item.title }}', {{ item.amount }}, '{{ item.category }}', '{{ selected_date }}')">Edit</button>
+                                <button class="action-btn delete-btn" onclick="deleteItem({{ item.id }})">&times;</button>
+                            </div>
+                        </li>
+                        {% else %}
+                        <p class="empty-text">No expenses on this date.</p>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Dialog Modal -->
+    <dialog id="editModal">
+        <div class="modal-header">
+            <h3>Modify Expense</h3>
+            <button class="action-btn" onclick="document.getElementById('editModal').close()">&times;</button>
+        </div>
+        <form class="edit-form" onsubmit="saveEdit(event)">
+            <input type="hidden" id="editId">
+            <label>Description</label>
+            <input type="text" id="editTitle" required>
+            <label>Amount (₹)</label>
+            <input type="number" step="0.01" id="editAmount" required>
+            <label>Category</label>
+            <select id="editCat">
+                <option value="General">General</option>
+                <option value="Food">Food & Dining</option>
+                <option value="Groceries">Groceries</option>
+                <option value="Transport">Transport</option>
+                <option value="Utilities">Utilities & Bills</option>
+                <option value="Entertainment">Entertainment</option>
+                <option value="Health">Health</option>
+            </select>
+            <label>Date</label>
+            <input type="date" id="editDate" required>
+            <div class="modal-actions">
+                <button type="button" class="btn-cancel" onclick="document.getElementById('editModal').close()">Cancel</button>
+                <button type="submit">Save Changes</button>
+            </div>
+        </form>
+    </dialog>
+
+    <script>
+        const getLocalDate = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const initialDate = "{{ selected_date }}" || getLocalDate();
+        let curY = parseInt(initialDate.slice(0, 4)), curM = parseInt(initialDate.slice(5, 7)) - 1, selDate = initialDate;
+        let dots = new Set();
+
+        async function fetchDots() {
+            try {
+                const res = await fetch(`/api/month-summary?year=${curY}&month=${curM + 1}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    dots = new Set(data.dates_with_expenses || []);
+                    renderCalendar();
+                }
+            } catch (e) {}
+        }
+
+        async function selectDate(dStr) {
+            selDate = dStr;
+            renderCalendar();
+            document.getElementById("dateSummaryTitle").textContent = `Summary for ${dStr}`;
+            const totalEl = document.getElementById("dateSummaryTotal"), listEl = document.getElementById("selectedExpensesList");
+            totalEl.textContent = "Loading...";
+
+            try {
+                const res = await fetch(`/api/expenses?date=${dStr}`);
+                const items = res.ok ? await res.json() : [];
+                listEl.innerHTML = items.length ? "" : '<p class="empty-text">No expenses on this date.</p>';
+                let total = 0;
+                items.forEach(item => {
+                    total += item.amount;
+                    listEl.innerHTML += `
+                        <li class="expense-item">
+                            <div class="expense-info"><span class="expense-title">${item.title}</span><span class="expense-meta">${item.category}</span></div>
+                            <div class="expense-right">
+                                <span class="expense-amount">₹${item.amount.toFixed(2)}</span>
+                                <button class="action-btn" onclick="openEdit(${item.id}, '${item.title}', ${item.amount}, '${item.category}', '${item.date}')">Edit</button>
+                                <button class="action-btn delete-btn" onclick="deleteItem(${item.id})">&times;</button>
+                            </div>
+                        </li>`;
+                });
+                totalEl.textContent = `Total: ₹${total.toFixed(2)}`;
+            } catch (e) {
+                totalEl.textContent = "Total: ₹0.00";
+            }
+        }
+
+        function renderCalendar() {
+            document.getElementById("calMonthYear").textContent = `${new Date(curY, curM).toLocaleString('default', { month: 'long' })} ${curY}`;
+            const grid = document.getElementById("calDaysGrid");
+            grid.innerHTML = "";
+            const firstDay = new Date(curY, curM, 1).getDay(), totalDays = new Date(curY, curM + 1, 0).getDate(), prevTotal = new Date(curY, curM, 0).getDate();
+            const today = getLocalDate();
+
+            for (let i = firstDay - 1; i >= 0; i--) grid.innerHTML += `<div class="cal-day-cell other-month">${prevTotal - i}</div>`;
+            for (let d = 1; d <= totalDays; d++) {
+                const dStr = `${curY}-${String(curM + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                grid.innerHTML += `<div class="cal-day-cell ${dStr === today ? 'today' : ''} ${dStr === selDate ? 'selected' : ''}" onclick="selectDate('${dStr}')">${d}${dots.has(dStr) ? '<div class="expense-dot"></div>' : ''}</div>`;
+            }
+            const trailing = (7 - ((firstDay + totalDays) % 7)) % 7;
+            for (let j = 1; j <= trailing; j++) grid.innerHTML += `<div class="cal-day-cell other-month">${j}</div>`;
+        }
+
+        function changeMonth(delta) {
+            curM += delta;
+            if (curM < 0) { curM = 11; curY--; } else if (curM > 11) { curM = 0; curY++; }
+            renderCalendar();
+            fetchDots();
+        }
+
+        function jumpToday() {
+            const now = new Date();
+            curY = now.getFullYear(); curM = now.getMonth();
+            selectDate(getLocalDate(now));
+            fetchDots();
+        }
+
+        function openEdit(id, title, amount, cat, date) {
+            document.getElementById("editId").value = id;
+            document.getElementById("editTitle").value = title;
+            document.getElementById("editAmount").value = amount;
+            document.getElementById("editCat").value = cat || "General";
+            document.getElementById("editDate").value = date;
+            document.getElementById("editModal").showModal();
+        }
+
+        async function saveEdit(e) {
+            e.preventDefault();
+            const id = document.getElementById("editId").value;
+            const res = await fetch(`/api/expenses/${id}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    title: document.getElementById("editTitle").value,
+                    amount: parseFloat(document.getElementById("editAmount").value),
+                    category: document.getElementById("editCat").value,
+                    date: document.getElementById("editDate").value
+                })
+            });
+            if (res.ok) window.location.reload();
+        }
+
+        async function deleteItem(id) {
+            if (confirm("Delete this expense?")) {
+                const res = await fetch(`/api/expenses/${id}/delete`, { method: "POST" });
+                if (res.ok) window.location.reload();
+            }
+        }
+
+        renderCalendar();
+        fetchDots();
+    </script>
+</body>
+</html>
