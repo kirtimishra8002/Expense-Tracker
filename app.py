@@ -1,9 +1,11 @@
+from routes import expense_bp
 from datetime import date
 from flask import Flask, request, render_template, redirect, url_for, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import extract
 
 app = Flask(__name__)
+app.register_blueprint(expense_bp)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///expenses.db"
 db = SQLAlchemy(app)
 
