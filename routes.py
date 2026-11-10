@@ -1,21 +1,17 @@
-from flask import Blueprint, request, jsonify
-from models import db, Expense
+
 from datetime import datetime
+from flask import request, jsonify
 
-# Define Flask Blueprint
-expense_bp = Blueprint('expense_bp', __name__)
 
-# --- Task 4: Input Validation Helper ---
+# Input Validation
 def validate_expense_input(data, is_update=False):
     errors = []
 
-    # Required fields check when adding a new expense
     if not is_update:
         for field in ['amount', 'category', 'date']:
             if field not in data or data[field] is None or str(data[field]).strip() == "":
                 errors.append(f"Field '{field}' is required.")
 
-    # Amount validation (Must be positive float)
     if 'amount' in data and data['amount'] is not None:
         try:
             val = float(data['amount'])
@@ -24,36 +20,31 @@ def validate_expense_input(data, is_update=False):
         except (ValueError, TypeError):
             errors.append("Amount must be a valid number.")
 
-    # Date validation (Format YYYY-MM-DD)
     if 'date' in data and data['date'] is not None:
         try:
             datetime.strptime(data['date'], "%Y-%m-%d")
-        except ValueError:
+        except (ValueError, TypeError):
             errors.append("Date must be in YYYY-MM-DD format.")
 
     return errors
 
 
-# -------------------------------------------------------------------
-# Task 1: POST /api/expenses (Add New Expense)
-# -------------------------------------------------------------------
-@expense_bp.route('/api/expenses', methods=['POST'])
-def add_expense():
+# Add Expense
+def add_expense(db, Expense):
     data = request.get_json()
+
     if not data:
         return jsonify({"error": "JSON payload required"}), 400
 
-    errors = validate_expense_input(data, is_update=False)
+    errors = validate_expense_input(data)
     if errors:
         return jsonify({"errors": errors}), 400
 
     try:
-        parsed_date = datetime.strptime(data['date'], "%Y-%m-%d").date()
-
         new_expense = Expense(
             amount=float(data['amount']),
             category=data['category'].strip(),
-            date=parsed_date,
+            date=datetime.strptime(data['date'], "%Y-%m-%d").date(),
             description=data.get('description', '').strip()
         )
 
@@ -70,16 +61,15 @@ def add_expense():
         return jsonify({"error": "Database error", "details": str(e)}), 500
 
 
-# -------------------------------------------------------------------
-# Task 2: PUT /api/expenses/<id> (Update Expense)
-# -------------------------------------------------------------------
-@expense_bp.route('/api/expenses/<int:expense_id>', methods=['PUT'])
-def update_expense(expense_id):
+# Update Expense
+def update_expense(db, Expense, expense_id):
     expense = Expense.query.get(expense_id)
+
     if not expense:
         return jsonify({"error": f"Expense with ID {expense_id} not found."}), 404
 
     data = request.get_json()
+
     if not data:
         return jsonify({"error": "JSON payload required"}), 400
 
@@ -94,8 +84,8 @@ def update_expense(expense_id):
             expense.category = data['category'].strip()
         if 'date' in data:
             expense.date = datetime.strptime(data['date'], "%Y-%m-%d").date()
-        if 'description' in data:
-            expense.description = data['description'].strip()
+        if "title" in data or 'description' in data:
+            expense.description = (data.get('title') or data.get('description')).strip()
 
         db.session.commit()
 
@@ -109,12 +99,10 @@ def update_expense(expense_id):
         return jsonify({"error": "Database update failed", "details": str(e)}), 500
 
 
-# -------------------------------------------------------------------
-# Task 3: DELETE /api/expenses/<id> (Delete Expense)
-# -------------------------------------------------------------------
-@expense_bp.route('/api/expenses/<int:expense_id>', methods=['DELETE'])
-def delete_expense(expense_id):
+# Delete Expense
+def delete_expense(db, Expense, expense_id):
     expense = Expense.query.get(expense_id)
+
     if not expense:
         return jsonify({"error": f"Expense with ID {expense_id} not found."}), 404
 

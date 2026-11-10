@@ -1,11 +1,10 @@
-from routes import expense_bp
+import routes
 from datetime import date
 from flask import Flask, request, render_template, redirect, url_for, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import extract
 
 app = Flask(__name__)
-app.register_blueprint(expense_bp)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///expenses.db"
 db = SQLAlchemy(app)
 
@@ -68,52 +67,26 @@ def home():
 @app.route("/api/expenses", methods=["GET", "POST"])
 def api_expenses():
     if request.method == "POST":
-        data = request.get_json(silent=True) or request.form
-        try:
-            exp = Expense(
-                description=str(data.get("title") or data.get("description")).strip(),
-                amount=float(data["amount"]),
-                category=data.get("category", "General"),
-                date=date.fromisoformat(data.get("date", date.today().isoformat()))
-            )
-            db.session.add(exp)
-            db.session.commit()
-            return jsonify(exp.to_dict()), 201
-        except (KeyError, ValueError, TypeError):
-            return {"error": "Invalid data"}, 400
+        return routes.add_expense(db, Expense)
 
     d_str = request.args.get("date")
     if not d_str:
         return {"error": "Date required"}, 400
+
     try:
         items = Expense.query.filter_by(date=date.fromisoformat(d_str)).all()
         return jsonify([e.to_dict() for e in items])
     except ValueError:
         return {"error": "Invalid date format"}, 400
-
+    
 @app.route("/api/expenses/<int:id>", methods=["POST", "PUT"])
 def update_expense(id):
-    exp = Expense.query.get_or_404(id)
-    data = request.get_json(silent=True) or request.form
-    if "title" in data or "description" in data:
-        exp.description = str(data.get("title") or data.get("description")).strip()
-    if "amount" in data:
-        try: exp.amount = float(data["amount"])
-        except (ValueError, TypeError): pass
-    if "category" in data:
-        exp.category = data["category"]
-    if "date" in data:
-        try: exp.date = date.fromisoformat(str(data["date"]))
-        except ValueError: pass
-    db.session.commit()
-    return jsonify(exp.to_dict())
+    return routes.update_expense(db, Expense, id)
+
 
 @app.route("/api/expenses/<int:id>/delete", methods=["POST", "DELETE"])
 def delete_expense(id):
-    exp = Expense.query.get_or_404(id)
-    db.session.delete(exp)
-    db.session.commit()
-    return {"message": "Deleted", "id": id}
+    return routes.delete_expense(db, Expense, id)
 
 @app.route("/api/month-summary")
 def month_summary():
